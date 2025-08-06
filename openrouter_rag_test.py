@@ -18,7 +18,7 @@ client = OpenAI(
     api_key=os.environ["OPENROUTER_API_KEY"]
 )
 
-MODEL_NAME = "deepseek/deepseek-r1:free"
+MODEL_NAME = "openrouter/horizon-beta"
 CSV_FILE = "cafe_menu.csv"
 FAISS_DIR = "cafe_faiss"
 

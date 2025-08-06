@@ -1,54 +1,64 @@
 import os
 import csv
-import pickle
+from typing import Optional, List, Any, Mapping
 from langchain.schema import Document
 from langchain_community.vectorstores import FAISS
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_community.embeddings import OllamaEmbeddings
 from langchain.llms.base import LLM
 from langchain.callbacks.manager import CallbackManagerForLLMRun
+from langchain.memory import ConversationBufferMemory
+from pydantic import Field
 from openai import OpenAI
 
-# ================= تنظیمات =================
-os.environ["OPENROUTER_API_KEY"] = "کلید_API_خودت"
+# ===== تنظیمات =====
+os.environ["OPENROUTER_API_KEY"] = "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"
 
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=os.environ["OPENROUTER_API_KEY"]
 )
 
-MODEL_NAME = "openai/gpt-3.5-turbo"  # مدل LLM از OpenRouter
-INDEX_FILE = "cafe_faiss.pkl"
+MODEL_NAME = "deepseek/deepseek-r1:free"
 CSV_FILE = "cafe_menu.csv"
+FAISS_DIR = "cafe_faiss"
 
-# ================= کلاس LLM از OpenRouter =================
+# ===== LLM سفارشی با حافظه =====
 class OpenRouterLLM(LLM):
-    def _call(self, prompt: str, stop=None, run_manager: CallbackManagerForLLMRun = None):
+    memory: ConversationBufferMemory = Field(default_factory=ConversationBufferMemory)
+
+    def _call(self, prompt: str, stop: Optional[List[str]] = None, run_manager: Optional[CallbackManagerForLLMRun] = None) -> str:
+        # تاریخچه قبلی مکالمه
+        history = self.memory.load_memory_variables({})["history"]
+
         resp = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[
                 {"role": "system", "content": "تو یک دستیار حرفه‌ای کافه هستی که مشتری‌ها را بر اساس منوی موجود راهنمایی می‌کند. محترمانه و کوتاه جواب بده."},
-                {"role": "user", "content": prompt}
+                {"role": "user", "content": history + "\n" + prompt}
             ]
         )
-        return resp.choices[0].message.content
-    
+
+        answer = resp.choices[0].message.content
+        # ذخیره در حافظه
+        self.memory.chat_memory.add_user_message(prompt)
+        self.memory.chat_memory.add_ai_message(answer)
+        return answer
+
     @property
-    def _identifying_params(self):
+    def _identifying_params(self) -> Mapping[str, Any]:
         return {"model": MODEL_NAME}
-    
+
     @property
-    def _llm_type(self):
+    def _llm_type(self) -> str:
         return "openrouter_llm"
 
-# ================= ساخت یا لود بردارها =================
-embedding_fn = HuggingFaceEmbeddings(
-    model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-)
+# ===== Embedding با Ollama =====
+embedding_fn = OllamaEmbeddings(model="nomic-embed-text")
 
-if os.path.exists(INDEX_FILE):
+# ===== ساخت یا لود دیتابیس =====
+if os.path.exists(FAISS_DIR):
     print("📂 لود کردن دیتابیس آماده...")
-    with open(INDEX_FILE, "rb") as f:
-        vectorstore = pickle.load(f)
+    vectorstore = FAISS.load_local(FAISS_DIR, embedding_fn, allow_dangerous_deserialization=True)
 else:
     print("⚙️ ساخت دیتابیس بردار از CSV...")
     docs = []
@@ -57,23 +67,21 @@ else:
         for row in reader:
             content = " - ".join([f"{k}: {v}" for k, v in row.items()])
             docs.append(Document(page_content=content))
-    
-    vectorstore = FAISS.from_documents(docs, embedding_fn)
-    
-    with open(INDEX_FILE, "wb") as f:
-        pickle.dump(vectorstore, f)
 
-# ================= اجرای پرسش و پاسخ =================
+    vectorstore = FAISS.from_documents(docs, embedding_fn)
+    vectorstore.save_local(FAISS_DIR)
+
+# ===== اجرای چت =====
 llm = OpenRouterLLM()
 
 while True:
     query = input("\n🍵 سوال شما: ")
     if query.lower() in ["exit", "quit", "خروج"]:
         break
-    
+
     results = vectorstore.similarity_search(query, k=3)
     context = "\n".join([doc.page_content for doc in results])
-    
+
     final_prompt = f"""
 منوی کافه:
 {context}

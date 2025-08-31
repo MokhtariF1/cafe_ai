@@ -6,3 +6,5 @@ gunicorn
 openai
 faiss-cpu
 python-multipart
+langchain-huggingface
+sentence-transformers

@@ -68,14 +68,33 @@ DATA_DIR = settings.DATA_DIR
 #         return context
 
 
+# class BusinnessDataProvider:
+#     def __init__(
+#         self,
+#         bussiness_uid: str,
+#         ollama_embedding=OllamaEmbeddings(model="nomic-embed-text"),
+#     ) -> None:
+#         self.bussiness_uid = bussiness_uid
+#         self.embed = ollama_embedding
+# جایگزین خط زیر:
+# from langchain_ollama import OllamaEmbeddings
+
+# با یکی از گزینه‌های بالا:
+from langchain_huggingface import HuggingFaceEmbeddings
+
+# و در کلاس BusinnessDataProvider:
 class BusinnessDataProvider:
     def __init__(
         self,
         bussiness_uid: str,
-        ollama_embedding=OllamaEmbeddings(model="nomic-embed-text"),
+        # جایگزین OllamaEmbeddings:
+        embedding_model=HuggingFaceEmbeddings(
+            model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+        ),
     ) -> None:
         self.bussiness_uid = bussiness_uid
-        self.embed = ollama_embedding
+        self.embed = embedding_model
+        # ...
         self.FAISS_DIR = f"{DATA_DIR}/{self.bussiness_uid}/{FAISS_DIR_BASE}"
         self.check_folders()
 
